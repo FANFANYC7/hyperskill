@@ -1,0 +1,159 @@
+import numpy as np
+import pandas as pd
+import os
+import requests
+from matplotlib import pyplot as plt
+import tqdm
+
+# scroll to the bottom to start coding your solution
+
+
+def one_hot(data: np.ndarray) -> np.ndarray:
+    y_train = np.zeros((data.size, data.max() + 1))
+    rows = np.arange(data.size)
+    y_train[rows, data] = 1
+    return y_train
+
+
+def plot(loss_history: list, accuracy_history: list, filename='plot'):
+    # function to visualize learning process at stage 4
+
+    n_epochs = len(loss_history)
+
+    plt.figure(figsize=(20, 10))
+    plt.subplot(1, 2, 1)
+    plt.plot(loss_history)
+
+    plt.xlabel('Epoch number')
+    plt.ylabel('Loss')
+    plt.xticks(np.arange(0, n_epochs, 4))
+    plt.title('Loss on train dataframe from epoch')
+    plt.grid()
+
+    plt.subplot(1, 2, 2)
+    plt.plot(accuracy_history)
+
+    plt.xlabel('Epoch number')
+    plt.ylabel('Accuracy')
+    plt.xticks(np.arange(0, n_epochs, 4))
+    plt.title('Accuracy on test dataframe from epoch')
+    plt.grid()
+
+    plt.savefig(f'{filename}.png')
+
+
+if __name__ == '__main__':
+
+    if not os.path.exists('../Data'):
+        os.mkdir('../Data')
+
+    # Download data if it is unavailable.
+    if ('fashion-mnist_train.csv' not in os.listdir('../Data') and
+            'fashion-mnist_test.csv' not in os.listdir('../Data')):
+        print('Train dataset loading.')
+        url = "https://www.dropbox.com/s/5vg67ndkth17mvc/fashion-mnist_train.csv?dl=1"
+        r = requests.get(url, allow_redirects=True)
+        open('../Data/fashion-mnist_train.csv', 'wb').write(r.content)
+        print('Loaded.')
+
+        print('Test dataset loading.')
+        url = "https://www.dropbox.com/s/9bj5a14unl5os6a/fashion-mnist_test.csv?dl=1"
+        r = requests.get(url, allow_redirects=True)
+        open('../Data/fashion-mnist_test.csv', 'wb').write(r.content)
+        print('Loaded.')
+
+    # Read train, test data.
+    raw_train = pd.read_csv('../Data/fashion-mnist_train.csv')
+    raw_test = pd.read_csv('../Data/fashion-mnist_test.csv')
+
+    X_train = raw_train[raw_train.columns[1:]].values
+    X_test = raw_test[raw_test.columns[1:]].values
+
+    y_train = one_hot(raw_train['label'].values)
+    y_test = one_hot(raw_test['label'].values)
+
+
+    # write your code here
+    class TwoLayerNeural:
+        def __init__(self, n_features, n_classes):
+            # Initializing weights
+            self.weights_1 = xavier(n_features, 64)
+            self.weights_2 = xavier(64, n_classes)
+            self.bias_1 = xavier(1, 64)
+            self.bias_2 = xavier(1, n_classes)
+            self.output_1 = None
+            self.output_2 = None
+            self.output_3 = None
+            self.output_4 = None
+
+        def forward(self, X):
+            self.output_1 = np.matmul(X, self.weights_1) + self.bias_1
+            # print(self.output_1.max(),self.output_1.min())
+            self.output_2 = sigmoid(self.output_1)
+            self.output_3 = np.matmul(self.output_2, self.weights_2) + self.bias_2
+            # print(self.output_3.max(), self.output_3.min())
+            self.output_4 = sigmoid(self.output_3)
+
+        def backprop(self, X, y, alpha=0.1):
+            error_2 = mse_derivative(self.output_4, y) * self.output_4 * (1 - self.output_4) / X.shape[0]
+
+            error_1 = np.matmul(error_2, self.weights_2.T) * self.output_2 * (1 - self.output_2)
+            delta_w_1 = np.matmul(X.T, error_1)
+            delta_b_1 = np.sum(error_1, axis=0)
+            self.weights_1 -= alpha * delta_w_1
+            self.bias_1 -= alpha * delta_b_1
+
+            delta_w_2 = np.matmul(self.output_2.T, error_2)
+            delta_b_2 = np.sum(error_2, axis=0)
+            self.weights_2 -= alpha * delta_w_2
+            self.bias_2 -= alpha * delta_b_2
+
+
+    def scale(x_train: np.ndarray, x_test: np.ndarray):
+        return x_train / x_train.max(), x_test / x_test.max()
+
+
+    def xavier(n_in, n_out):
+        return np.random.uniform(-np.sqrt(6 / (n_in + n_out)), np.sqrt(6 / (n_in + n_out)), (n_in, n_out))
+
+
+    def sigmoid(x: np.ndarray):
+        return 1 / (1 + np.exp(-x))
+
+
+    def mse(y_pred, y_true):
+        return np.mean((y_pred - y_true) ** 2)
+
+
+    def mse_derivative(y_pred, y_true):
+        return 2 * (y_pred - y_true)
+
+
+    def sigmoid_derivative(x: np.ndarray):
+        return sigmoid(x) * (1 - sigmoid(x))
+
+    def training(model: TwoLayerNeural, alpha: float, x_t: np.ndarray, y_t: np.ndarray, batch_size=100):
+        n = x_t.shape[0]
+        for j in range(0, n, batch_size):
+            model.forward(x_t[j:j + batch_size])
+            model.backprop(x_t[j:j + batch_size], y_t[j:j + batch_size], alpha)
+
+    def accuracy(model: TwoLayerNeural, x_te, y_te):
+        model.forward(x_te)
+        y_p = model.output_4
+        y_p_index = y_p.argmax(axis=1)
+        y_te_index = y_te.argmax(axis=1)
+        return np.mean(y_p_index == y_te_index)
+
+
+    # test
+    X_train, X_test = scale(X_train, X_test)
+    two_layer = TwoLayerNeural(X_train[0].size, 10)
+    loss_logging = []
+    accuracy_logging = []
+    for i in tqdm.tqdm(range(20)):
+        training(two_layer, 0.5, X_train, y_train)
+        two_layer.forward(X_train)
+        loss_logging.append(mse(two_layer.output_4, y_train))
+        accuracy_logging.append(accuracy(two_layer, X_test, y_test))
+    print(accuracy_logging)
